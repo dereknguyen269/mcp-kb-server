@@ -1,9 +1,18 @@
 {
   "name": "mcp-kb-server",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "MCP server providing persistent memory, knowledge base, and project summary capabilities with automatic project detection",
   "type": "module",
   "license": "MIT",
+  "author": "dereknguyen269",
+  "homepage": "https://github.com/dereknguyen269/mcp-kb-server#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dereknguyen269/mcp-kb-server.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dereknguyen269/mcp-kb-server/issues"
+  },
   "keywords": [
     "mcp",
     "model-context-protocol",

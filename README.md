@@ -1,5 +1,9 @@
 # MCP Knowledge Base Server
 
+[![npm version](https://img.shields.io/npm/v/mcp-kb-server.svg)](https://www.npmjs.com/package/mcp-kb-server)
+[![license](https://img.shields.io/npm/l/mcp-kb-server.svg)](https://www.npmjs.com/package/mcp-kb-server)
+[![Node.js](https://img.shields.io/node/v/mcp-kb-server.svg)](https://www.npmjs.com/package/mcp-kb-server)
+
 A Model Context Protocol (MCP) server providing persistent memory, knowledge base, and project summary capabilities with automatic project detection and interactive dashboards.
 
 ## How It Works
@@ -105,13 +109,13 @@ A Model Context Protocol (MCP) server providing persistent memory, knowledge bas
 ## Installation
 
 ```bash
-npm install
+npm install -g mcp-kb-server
 ```
 
-## Testing
+Or use directly with npx (no install needed):
 
 ```bash
-npm run test
+npx mcp-kb-server
 ```
 
 ## Usage
@@ -124,8 +128,22 @@ Configure in your MCP client (e.g., Kiro, Claude Desktop):
 {
   "mcpServers": {
     "kb-server": {
-      "command": "node",
-      "args": ["/path/to/mcp-kb-server/src/server.js"],
+      "command": "npx",
+      "args": ["mcp-kb-server"],
+      "env": {}
+    }
+  }
+}
+```
+
+Or if installed globally:
+
+```json
+{
+  "mcpServers": {
+    "kb-server": {
+      "command": "mcp-kb-server",
+      "args": [],
       "env": {}
     }
   }
@@ -358,9 +376,44 @@ Uses SQLite for persistent storage:
 - **memory.sqlite** - Memory entries with project scoping
 - **kb.sqlite** - Knowledge base documents with FTS5
 
-Databases are automatically created in the `data/` directory on first run.
+Databases are automatically created in the `data/` directory inside the package on first run. You can customize the location with the `DATA_DIR` environment variable:
+
+```json
+{
+  "mcpServers": {
+    "kb-server": {
+      "command": "npx",
+      "args": ["mcp-kb-server"],
+      "env": {
+        "DATA_DIR": "/path/to/your/data"
+      }
+    }
+  }
+}
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `DATA_DIR` | `<package>/data` | Database storage directory |
+| `LOG_LEVEL` | `info` | Logging level |
+| `MAX_MEMORY_ENTRIES` | `1000` | Max memory entries |
+| `MAX_KB_ENTRIES` | `500` | Max KB entries |
+| `MAX_CONTENT_SIZE` | `50000` | Max content size (bytes) |
+| `ENABLE_QDRANT` | `false` | Enable Qdrant vector search |
+| `QDRANT_URL` | `http://localhost:6333` | Qdrant server URL |
+| `DASHBOARD_PORT` | auto | Dashboard server port |
 
 ## Development
+
+### Setup
+
+```bash
+git clone https://github.com/dereknguyen269/mcp-kb-server.git
+cd mcp-kb-server
+npm install
+```
 
 ### Run Tests
 
@@ -420,7 +473,9 @@ Supports glob patterns with `*` and `**`.
 ## Requirements
 
 - **Node.js**: ≥18
-- **Dependencies**: better-sqlite3, dotenv, joi, winston
+- **npm**: ≥7 (for npx support)
+
+All dependencies (better-sqlite3, dotenv, joi, winston) are installed automatically.
 
 ## Architecture
 
@@ -682,7 +737,9 @@ MIT
 
 ## Support
 
-For issues, questions, or contributions, please open an issue on GitHub.
+- **npm**: [https://www.npmjs.com/package/mcp-kb-server](https://www.npmjs.com/package/mcp-kb-server)
+- **GitHub**: [https://github.com/dereknguyen269/mcp-kb-server](https://github.com/dereknguyen269/mcp-kb-server)
+- **Issues**: For bugs and feature requests, please [open an issue](https://github.com/dereknguyen269/mcp-kb-server/issues).
 
 ## Acknowledgments
 
