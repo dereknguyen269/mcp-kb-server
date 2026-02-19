@@ -2,16 +2,85 @@
 
 A Model Context Protocol (MCP) server providing persistent memory, knowledge base, and project summary capabilities with automatic project detection and interactive dashboards.
 
+## How It Works
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                   AI Assistant (Kiro, Claude, etc.)          │
+│                                                              │
+│  "Remember we use JWT"    "What do I know about auth?"       │
+│  "Show all my memories"   "What changed since last summary?" │
+└──────────────┬───────────────────────────┬───────────────────┘
+               │ MCP Protocol (stdio)      │
+               ▼                           ▼
+┌──────────────────────────────────────────────────────────────┐
+│                    mcp-kb-server                             │
+│                                                              │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌──────────┐            │
+│  │ memory  │ │   kb    │ │ summary │ │dashboard │            │
+│  │ .store  │ │ .add    │ │.project │ │.projects │            │
+│  │ .search │ │ .search │ │ .delta  │ └──────────┘            │
+│  │ .list   │ └─────────┘ └─────────┘                         │
+│  │ .delete │                                                 │
+│  │ .update │   Auto-detect project_id from project_root      │
+│  └─────────┘   package.json → git remote → directory name    │
+│                                                              │
+│  ┌────────────────────┐  ┌────────────────────┐              │
+│  │  memory.sqlite     │  │  kb.sqlite          │             │
+│  │  + memory_fts(FTS5)│  │  + kb_fts (FTS5)    │             │
+│  │  + expires/TTL     │  │  + kb_meta (scoping) │            │
+│  └────────────────────┘  └────────────────────┘              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Agent Workflow
+
+```
+  Store knowledge          Recall knowledge          Maintain knowledge
+  ─────────────           ────────────────          ──────────────────
+                                                    
+  memory.store ──┐        memory.search -──┐         memory.update ──┐
+  (decisions,    │        (query + tags,   │         (correct info,  │
+   patterns,     │         FTS5 ranking)   │          refine tags)   │
+   bug fixes)    │                         │                         │
+                 │        memory.list ─────┤         memory.delete ──┤
+  kb.add ────────┤        (paginated,      │         (remove stale)  │
+  (docs, specs,  │         total_count)    │                         │
+   references)   │                         │         TTL/expiry ─────┘
+                 │        kb.search ───────┤         (auto-purge)
+                 │        (FTS5 + optional │
+                 │         project scoping)│
+                 │                         │
+                 ▼                         ▼
+           ┌──────────┐            ┌──────────────┐
+           │  SQLite  │            │  summary     │
+           │  (WAL)   │◄───────────│  .project    │
+           └──────────┘            │  .delta      │
+                                   └──────┬───────┘
+                                          │
+                                          ▼
+                                   ┌──────────────┐
+                                   │  dashboard   │
+                                   │  .projects   │
+                                   │  (HTML view) │
+                                   └──────────────┘
+```
+
 ## Features
 
 ### 🧠 Memory Management
-- **Long-term Memory**: Store and search project-specific memory entries
+- **Long-term Memory**: Store, search, list, update, and delete project-specific memory entries
+- **Full-Text Search**: FTS5 with BM25 ranking via `use_fts` flag, plus substring fallback
+- **Tag Filtering**: Filter memories by tag name, combine with text queries
+- **Pagination**: `memory.list` with `total_count`, `offset`, `has_more` for browsing all memories
+- **TTL / Expiry**: Optional `expires_at` on entries, auto-purged on access
 - **Automatic Project Detection**: Auto-detect project_id from package.json, git, or directory name
 - **Project Isolation**: Complete data isolation between projects
 - **Scoped Storage**: Organize entries by custom scopes
 
 ### 📚 Knowledge Base
 - **Document Storage**: Add and search documents with full-text search (FTS5)
+- **Project Scoping**: Optional `project_id` on kb.add/kb.search to isolate docs per project
 - **Vector Search**: Optional Qdrant integration for semantic search
 - **Source Tracking**: Track document sources and metadata
 
@@ -31,6 +100,7 @@ A Model Context Protocol (MCP) server providing persistent memory, knowledge bas
 - **Mismatch Detection**: Warns when explicit project_id differs from detected
 - **XSS Protection**: All user content is HTML-escaped
 - **Path Normalization**: Consistent absolute paths across platforms
+- **Cache Invalidation**: Query cache cleared on all mutations
 
 ## Installation
 
@@ -73,7 +143,8 @@ Requires either `project_root` or `project_id`.
   "project_root": "/path/to/project",  // Auto-detects project_id
   "content": "Important information",
   "scope": "default",                  // Optional
-  "tags": ["feature", "auth"]          // Optional
+  "tags": ["feature", "auth"],         // Optional
+  "expires_at": "2026-12-31T00:00:00Z" // Optional TTL
 }
 ```
 
@@ -82,8 +153,40 @@ Requires either `project_root` or `project_id`.
 {
   "project_root": "/path/to/project",
   "query": "authentication",
+  "tag": "decision",                   // Optional — filter by tag
+  "use_fts": true,                     // Optional — FTS5 with BM25 ranking
   "scope": "default",                  // Optional
   "limit": 5                           // Optional
+}
+```
+
+**memory.list** - List all memories with pagination
+```javascript
+{
+  "project_root": "/path/to/project",
+  "limit": 50,                         // Optional (1-500, default 50)
+  "offset": 0,                         // Optional — for pagination
+  "scope": "decisions"                 // Optional — filter by scope
+}
+// Returns: { total_count, offset, limit, has_more, entries }
+```
+
+**memory.delete** - Delete a memory entry
+```javascript
+{
+  "project_root": "/path/to/project",
+  "id": "uuid-of-entry"
+}
+```
+
+**memory.update** - Update an existing memory entry
+```javascript
+{
+  "project_root": "/path/to/project",
+  "id": "uuid-of-entry",
+  "content": "Updated information",    // Optional
+  "tags": ["updated", "auth"],         // Optional — replaces existing
+  "expires_at": ""                     // Optional — empty string removes expiry
 }
 ```
 
@@ -94,7 +197,8 @@ Requires either `project_root` or `project_id`.
 {
   "title": "API Documentation",
   "content": "Complete API reference...",
-  "source": "docs/api.md"              // Optional
+  "source": "docs/api.md",             // Optional
+  "project_id": "my-project"           // Optional — scope to project
 }
 ```
 
@@ -102,6 +206,7 @@ Requires either `project_root` or `project_id`.
 ```javascript
 {
   "query": "authentication",
+  "project_id": "my-project",          // Optional — search only this project's docs
   "limit": 5                           // Optional
 }
 ```
@@ -263,14 +368,15 @@ Databases are automatically created in the `data/` directory on first run.
 npm test
 ```
 
-All 42 tests should pass:
-- ✅ Memory tools (6 tests)
-- ✅ KB tools (3 tests)
+All 66 tests should pass:
+- ✅ Memory tools — store, search, list, delete, update, tags, FTS5, expiry (15 tests)
+- ✅ KB tools — add, search, vector, rollback, project scoping (4 tests)
 - ✅ Project ID detection (6 tests)
 - ✅ Project safety (11 tests)
 - ✅ Project scoping (5 tests)
 - ✅ Summary tools (4 tests)
 - ✅ Dashboard (7 tests)
+- ✅ Config, errors, performance, validation (14 tests)
 
 ### Project Detection
 
@@ -314,7 +420,7 @@ Supports glob patterns with `*` and `**`.
 ## Requirements
 
 - **Node.js**: ≥18
-- **Dependencies**: better-sqlite3 (automatically installed)
+- **Dependencies**: better-sqlite3, dotenv, joi, winston
 
 ## Architecture
 
@@ -329,21 +435,29 @@ CREATE TABLE memory (
   content TEXT NOT NULL,
   tags TEXT,
   created_at TEXT NOT NULL,
+  updated_at TEXT,
+  expires_at TEXT,
   project_id TEXT NOT NULL DEFAULT 'legacy'
 );
 
+-- FTS5 for full-text search with BM25 ranking
+CREATE VIRTUAL TABLE memory_fts USING fts5(content, tags);
+
 CREATE INDEX idx_memory_project_id ON memory(project_id);
+CREATE INDEX idx_memory_expires_at ON memory(expires_at);
 ```
 
 ### Knowledge Base
 
-Full-text search with FTS5:
+Full-text search with FTS5, optional project scoping:
 
 ```sql
-CREATE VIRTUAL TABLE kb_fts USING fts5(
-  title, content, source,
-  content='kb',
-  content_rowid='id'
+CREATE VIRTUAL TABLE kb_fts USING fts5(title, content, source);
+
+-- Project scoping metadata
+CREATE TABLE kb_meta (
+  rowid INTEGER PRIMARY KEY,
+  project_id TEXT DEFAULT NULL
 );
 ```
 
@@ -358,6 +472,9 @@ CREATE VIRTUAL TABLE kb_fts USING fts5(
 ## Performance
 
 - **Indexed Queries**: All project_id queries use indexes
+- **FTS5 Search**: BM25-ranked full-text search on both memory and KB
+- **LRU Query Cache**: 50-entry cache with 5-minute TTL, auto-invalidated on mutations
+- **Throttled Maintenance**: Expired entry purge runs at most once per 60s per project
 - **Efficient Aggregation**: Dashboard uses single query for stats
 - **Configurable Limits**: Control result set sizes
 - **Synchronous API**: better-sqlite3 is faster than async alternatives
@@ -536,7 +653,18 @@ MIT
 
 ## Version History
 
-### v1.0.0 (Current)
+### v1.1.0 (Current)
+- ✅ memory.delete — remove outdated memories
+- ✅ memory.update — upsert content, tags, expiry
+- ✅ memory.list — paginated listing with total_count
+- ✅ Tag-based filtering on memory.search
+- ✅ FTS5 full-text search on memory (BM25 ranking)
+- ✅ KB project scoping (optional project_id)
+- ✅ TTL / expiry on memory entries (auto-purge)
+- ✅ LRU query cache with mutation invalidation
+- ✅ 66 comprehensive tests
+
+### v1.0.0
 - ✅ Automatic project_id detection
 - ✅ Project switching safety rules
 - ✅ Interactive HTML dashboards with Dark/Light mode
