@@ -1,0 +1,14 @@
+{
+  "instructionFiles": [
+    "CLAUDE.md",
+    "README.md",
+    "CONTRIBUTING.md",
+    ".github/copilot-instructions.md",
+    ".github/CONTRIBUTING.md",
+    ".cursor/rules",
+    ".cursor/rules.json",
+    "docs/architecture.md",
+    "docs/ARCHITECTURE.md",
+    ".kiro/resources/*.md"
+  ]
+}

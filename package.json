@@ -1,0 +1,22 @@
+{
+  "name": "mcp-kb-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "mcp-kb-server": "./src/server.js"
+  },
+  "scripts": {
+    "start": "node ./src/server.js",
+    "test": "NODE_ENV=test node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.5",
+    "dotenv": "^16.6.1",
+    "joi": "^17.13.3",
+    "winston": "^3.19.0"
+  }
+}
