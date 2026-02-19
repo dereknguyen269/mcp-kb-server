@@ -1,14 +1,31 @@
 {
   "name": "mcp-kb-server",
-  "version": "1.0.0",
-  "private": true,
+  "version": "1.1.0",
+  "description": "MCP server providing persistent memory, knowledge base, and project summary capabilities with automatic project detection",
   "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "knowledge-base",
+    "memory",
+    "sqlite",
+    "ai",
+    "llm"
+  ],
   "bin": {
     "mcp-kb-server": "./src/server.js"
   },
+  "files": [
+    "src/",
+    "config/",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "start": "node ./src/server.js",
-    "test": "NODE_ENV=test node --test"
+    "test": "NODE_ENV=test node --test",
+    "prepublishOnly": "npm test"
   },
   "engines": {
     "node": ">=18"

@@ -1,0 +1,20 @@
+# Dev & test
+test/
+coverage/
+.env
+.env.example
+
+# Data
+data/
+temp/
+
+# IDE & OS
+.kiro/
+.shared/
+.git/
+.DS_Store
+*.log
+
+# Docs (not needed in package)
+ainotes/
+EXAMPLES.md
