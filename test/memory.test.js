@@ -62,3 +62,72 @@ test("memory.search isolates by scope", () => {
   }
 });
 
+test("memory.search truncates content when max_content_length is set", () => {
+  const dataDir = makeTempDir("mcp-kb-memory-");
+  const { memoryDb, close } = openDatabases({ dataDir });
+  try {
+    const tools = createMemoryTools({ memoryDb });
+    const store = getTool(tools, "memory.store");
+    const search = getTool(tools, "memory.search");
+
+    store.handler({ project_id: "p1", content: "abcdefghij".repeat(10) });
+
+    const results = search.handler({ project_id: "p1", query: "abcdefghij", max_content_length: 20 });
+    assert.ok(results.length >= 1);
+    assert.equal(results[0].content.length, 20);
+    assert.equal(results[0].truncated, true);
+  } finally {
+    close();
+  }
+});
+
+test("memory.search does not set truncated when content fits", () => {
+  const dataDir = makeTempDir("mcp-kb-memory-");
+  const { memoryDb, close } = openDatabases({ dataDir });
+  try {
+    const tools = createMemoryTools({ memoryDb });
+    const store = getTool(tools, "memory.store");
+    const search = getTool(tools, "memory.search");
+
+    store.handler({ project_id: "p1", content: "short" });
+
+    const results = search.handler({ project_id: "p1", query: "short", max_content_length: 100 });
+    assert.ok(results.length >= 1);
+    assert.equal(results[0].content, "short");
+    assert.equal(results[0].truncated, undefined);
+  } finally {
+    close();
+  }
+});
+
+test("memory.get returns full entry by id", () => {
+  const dataDir = makeTempDir("mcp-kb-memory-");
+  const { memoryDb, close } = openDatabases({ dataDir });
+  try {
+    const tools = createMemoryTools({ memoryDb });
+    const store = getTool(tools, "memory.store");
+    const get = getTool(tools, "memory.get");
+
+    const { id } = store.handler({ project_id: "p1", content: "full content", tags: ["x"] });
+    const entry = get.handler({ project_id: "p1", id });
+
+    assert.equal(entry.id, id);
+    assert.equal(entry.content, "full content");
+    assert.deepEqual(entry.tags, ["x"]);
+  } finally {
+    close();
+  }
+});
+
+test("memory.get throws for missing id", () => {
+  const dataDir = makeTempDir("mcp-kb-memory-");
+  const { memoryDb, close } = openDatabases({ dataDir });
+  try {
+    const tools = createMemoryTools({ memoryDb });
+    const get = getTool(tools, "memory.get");
+    assert.throws(() => get.handler({ project_id: "p1", id: "nonexistent" }), /not found/i);
+  } finally {
+    close();
+  }
+});
+

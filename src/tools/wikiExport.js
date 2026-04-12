@@ -96,13 +96,32 @@ export function createWikiExportTool({ memoryDb, kbDb }) {
         }
       }
 
+      // --- KB index page (exported separately) ---
+      if (includeKb) {
+        const indexRow = kbDb.prepare(`
+          SELECT f.rowid as id, f.title, f.content
+          FROM kb_fts f
+          JOIN kb_meta m ON m.rowid = f.rowid
+          WHERE m.project_id = ? AND f.source = '_index'
+          LIMIT 1
+        `).get(project_id);
+
+        if (indexRow) {
+          const filePath = path.join(outputDir, "kb-index.md");
+          writeFileSafe(filePath, indexRow.content);
+          filesWritten++;
+          indexSections.push(`\n## KB Index\n`);
+          indexSections.push(`- [KB Index](kb-index.md) — auto-maintained table of contents`);
+        }
+      }
+
       // --- KB entries ---
       if (includeKb) {
         const kbEntries = kbDb.prepare(`
           SELECT f.rowid as id, f.title, f.content, f.source
           FROM kb_fts f
           JOIN kb_meta m ON m.rowid = f.rowid
-          WHERE m.project_id = ?
+          WHERE m.project_id = ? AND f.source IS NOT '_index'
           ORDER BY f.rowid DESC
         `).all(project_id);
 

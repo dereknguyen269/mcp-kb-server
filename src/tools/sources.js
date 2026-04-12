@@ -57,7 +57,7 @@ export function createSourceTools({ kbDb }) {
   return [
     {
       name: "source.ingest",
-      description: "Ingest one or more documents (md, txt, csv, pdf) into the raw sources layer.",
+      description: "Ingest one or more documents (md, txt, csv, pdf) into the raw sources layer. After ingesting, follow the workflow in .kiro/steering/kb-ingest.md to extract entities into the KB, create cross-references, and update the index and changelog.",
       inputSchema: {
         type: "object",
         additionalProperties: false,
@@ -188,6 +188,35 @@ export function createSourceTools({ kbDb }) {
         `).all(`"${escaped}"`, project_id, limit);
 
         return rows;
+      }
+    },
+    {
+      name: "source.get",
+      description: "Fetch the full content of a single ingested source by ID. Use after source.search to retrieve the complete text of a specific document.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          id: { type: "string", description: "Source document ID" },
+          project_id: { type: "string" },
+          project_root: { type: "string" }
+        },
+        required: ["id"]
+      },
+      handler: async (args) => {
+        const project_id = resolveProjectId(args);
+        if (!project_id) throw Object.assign(new Error("project_id or project_root is required"), { code: -32602 });
+
+        const id = args?.id;
+        if (typeof id !== "string" || !id) throw Object.assign(new Error("id must be a non-empty string"), { code: -32602 });
+
+        const row = kbDb.prepare(
+          "SELECT id, slug, filename, file_type, content, file_path, ingested_at, size_bytes FROM sources WHERE id = ? AND project_id = ?"
+        ).get(id, project_id);
+
+        if (!row) throw Object.assign(new Error(`Source not found: ${id}`), { code: -32602 });
+
+        return row;
       }
     }
   ];

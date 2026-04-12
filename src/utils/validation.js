@@ -18,7 +18,8 @@ const memorySearchSchema = Joi.object({
   scope: Joi.string().max(100).optional(),
   tag: Joi.string().max(50).optional(),
   limit: Joi.number().integer().min(1).max(100).optional(),
-  use_fts: Joi.boolean().optional()
+  use_fts: Joi.boolean().optional(),
+  max_content_length: Joi.number().integer().min(1).optional()
 });
 
 const memoryDeleteSchema = Joi.object({
@@ -41,7 +42,14 @@ const memoryListSchema = Joi.object({
   project_id: Joi.string().optional(),
   scope: Joi.string().max(100).optional(),
   limit: Joi.number().integer().min(1).max(500).default(50),
-  offset: Joi.number().integer().min(0).default(0)
+  offset: Joi.number().integer().min(0).default(0),
+  max_content_length: Joi.number().integer().min(1).optional()
+});
+
+const memoryGetSchema = Joi.object({
+  id: Joi.string().required(),
+  project_root: Joi.string().when('project_id', { is: Joi.exist(), then: Joi.optional(), otherwise: Joi.required() }),
+  project_id: Joi.string().optional()
 });
 
 const kbAddSchema = Joi.object({
@@ -60,7 +68,39 @@ const kbSearchSchema = Joi.object({
   project_id: Joi.string().optional(),
   vector: Joi.array().items(Joi.number()).optional(),
   qdrantUrl: Joi.string().uri().optional(),
-  qdrantCollection: Joi.string().max(100).optional()
+  qdrantCollection: Joi.string().max(100).optional(),
+  max_content_length: Joi.number().integer().min(1).optional()
+});
+
+const kbGetSchema = Joi.object({
+  id: Joi.number().integer().required(),
+  project_id: Joi.string().optional()
+});
+
+const kbIndexSchema = Joi.object({
+  project_id: Joi.string().required(),
+  content: Joi.string().max(config.maxKbContentSize).optional()
+});
+
+const kbUpdateSchema = Joi.object({
+  id: Joi.number().integer().required(),
+  project_id: Joi.string().optional(),
+  title: Joi.string().max(500).optional(),
+  content: Joi.string().max(config.maxKbContentSize).optional(),
+  source: Joi.string().max(1000).optional()
+});
+
+const kbDeleteSchema = Joi.object({
+  id: Joi.number().integer().required(),
+  project_id: Joi.string().optional()
+});
+
+const kbInitSchema = Joi.object({
+  project_root: Joi.string().required(),
+  project_id: Joi.string().optional(),
+  patterns: Joi.array().items(Joi.string().max(200)).max(20).optional(),
+  skip_patterns: Joi.array().items(Joi.string().max(200)).max(20).optional(),
+  overwrite: Joi.boolean().optional()
 });
 
 const summaryProjectSchema = Joi.object({
@@ -129,9 +169,19 @@ const wikiLinksSchema = Joi.object({
   direction: Joi.string().valid('in', 'out', 'both').default('both')
 });
 
-const wikiLintSchema = Joi.object({
+const sourceGetSchema = Joi.object({
+  id: Joi.string().required(),
   project_id: Joi.string().optional(),
   project_root: Joi.string().optional()
+});
+
+const wikiLintSchema = Joi.object({
+  project_id: Joi.string().optional(),
+  project_root: Joi.string().optional(),
+  lint_mode: Joi.string().valid('structural', 'semantic').default('structural'),
+  max_kb_entries: Joi.number().integer().min(1).max(200).optional(),
+  max_memory_entries: Joi.number().integer().min(1).max(200).optional(),
+  content_preview_length: Joi.number().integer().min(50).max(10000).optional()
 });
 
 const wikiExportSchema = Joi.object({
@@ -149,14 +199,21 @@ export const schemas = {
   'memory.delete': memoryDeleteSchema,
   'memory.update': memoryUpdateSchema,
   'memory.list': memoryListSchema,
+  'memory.get': memoryGetSchema,
   'kb.add': kbAddSchema,
   'kb.search': kbSearchSchema,
+  'kb.get': kbGetSchema,
+  'kb.index': kbIndexSchema,
+  'kb.update': kbUpdateSchema,
+  'kb.delete': kbDeleteSchema,
+  'kb.init': kbInitSchema,
   'summary.project': summaryProjectSchema,
   'summary.delta': summaryDeltaSchema,
   'dashboard.projects': dashboardSchema,
   'source.ingest': sourceIngestSchema,
   'source.list': sourceListSchema,
   'source.search': sourceSearchSchema,
+  'source.get': sourceGetSchema,
   'wiki.link': wikiLinkSchema,
   'wiki.links': wikiLinksSchema,
   'wiki.lint': wikiLintSchema,

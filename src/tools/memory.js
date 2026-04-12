@@ -287,7 +287,8 @@ export function createMemoryTools({ memoryDb }) {
           query: { type: "string" },
           tag: { type: "string", description: "Filter by tag name. Returns only entries containing this tag." },
           limit: { type: "number", default: 5 },
-          use_fts: { type: "boolean", default: false, description: "Use FTS5 full-text search with BM25 ranking instead of substring match." }
+          use_fts: { type: "boolean", default: false, description: "Use FTS5 full-text search with BM25 ranking instead of substring match." },
+          max_content_length: { type: "number", description: "Truncate content to this many characters. Truncated results include truncated:true. Omit to return full content." }
         },
         required: ["query"]
       },
@@ -298,6 +299,16 @@ export function createMemoryTools({ memoryDb }) {
         const tag = args?.tag;
         const limit = asLimit(args?.limit, 5);
         const useFts = args?.use_fts || false;
+        const maxContentLength = (typeof args?.max_content_length === "number" && args.max_content_length > 0)
+          ? Math.trunc(args.max_content_length)
+          : null;
+
+        function applyContentLimit(item) {
+          if (maxContentLength === null || typeof item.content !== "string" || item.content.length <= maxContentLength) {
+            return item;
+          }
+          return { ...item, content: item.content.slice(0, maxContentLength), truncated: true };
+        }
 
         expectString(project_id, "project_id");
         expectOptionalString(scope, "scope");
@@ -311,7 +322,7 @@ export function createMemoryTools({ memoryDb }) {
         purgeExpired(project_id);
 
         // Build cache key that covers all search dimensions
-        const cacheKey = createQueryKey("memory_search", { project_id, scope: resolvedScope, query: trimmed, tag, limit, useFts });
+        const cacheKey = createQueryKey("memory_search", { project_id, scope: resolvedScope, query: trimmed, tag, limit, useFts, maxContentLength });
         const cached = getCachedQuery(cacheKey);
         if (cached) {
           metrics.recordCacheHit();
@@ -327,7 +338,7 @@ export function createMemoryTools({ memoryDb }) {
           rows = scope
             ? searchByTagAndScopeStmt.all(resolvedScope, project_id, tagPattern, limit)
             : searchByTagStmt.all(project_id, tagPattern, limit);
-          const result = rows.map(formatRow);
+          const result = rows.map(formatRow).map(applyContentLimit);
           setCachedQuery(cacheKey, result, 300000);
           return result;
         }
@@ -347,6 +358,7 @@ export function createMemoryTools({ memoryDb }) {
           result = result.filter((r) => Array.isArray(r.tags) && r.tags.includes(tag));
         }
 
+        result = result.map(applyContentLimit);
         setCachedQuery(cacheKey, result, 300000);
         return result;
       }
@@ -364,7 +376,8 @@ export function createMemoryTools({ memoryDb }) {
           project_root: { type: "string", description: "Project root directory" },
           scope: { type: "string", description: "Filter by scope. Omit to list across all scopes." },
           limit: { type: "number", default: 50, description: "Page size (1-500, default 50)" },
-          offset: { type: "number", default: 0, description: "Offset for pagination (default 0)" }
+          offset: { type: "number", default: 0, description: "Offset for pagination (default 0)" },
+          max_content_length: { type: "number", description: "Truncate content to this many characters. Truncated results include truncated:true. Omit to return full content." }
         },
         required: []
       },
@@ -373,6 +386,16 @@ export function createMemoryTools({ memoryDb }) {
         const scope = args?.scope;
         const rawLimit = args?.limit ?? 50;
         const offset = Math.max(0, Math.trunc(args?.offset ?? 0));
+        const maxContentLength = (typeof args?.max_content_length === "number" && args.max_content_length > 0)
+          ? Math.trunc(args.max_content_length)
+          : null;
+
+        function applyContentLimit(item) {
+          if (maxContentLength === null || typeof item.content !== "string" || item.content.length <= maxContentLength) {
+            return item;
+          }
+          return { ...item, content: item.content.slice(0, maxContentLength), truncated: true };
+        }
 
         expectString(project_id, "project_id");
         expectOptionalString(scope, "scope");
@@ -400,8 +423,40 @@ export function createMemoryTools({ memoryDb }) {
           offset,
           limit,
           has_more: offset + rows.length < total,
-          entries: rows.map(formatRow)
+          entries: rows.map(formatRow).map(applyContentLimit)
         };
+      }
+    },
+
+    // --- memory.get ---
+    {
+      name: "memory.get",
+      description: "Fetch a single memory entry by ID. Use after memory.search with max_content_length to retrieve the full content of a specific entry.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          id: { type: "string", description: "Memory entry ID" },
+          project_id: { type: "string", description: "Project identifier (auto-detected from project_root if not provided)" },
+          project_root: { type: "string", description: "Project root directory" }
+        },
+        required: ["id"]
+      },
+      handler: (args) => {
+        const project_id = resolveProjectId(args);
+        const id = args?.id;
+
+        expectString(project_id, "project_id");
+        expectString(id, "id");
+
+        const row = getByIdStmt.get(id, project_id);
+        if (!row) {
+          const error = new Error(`Memory entry not found: ${id}`);
+          error.code = -32602;
+          throw error;
+        }
+
+        return formatRow(row);
       }
     },
 

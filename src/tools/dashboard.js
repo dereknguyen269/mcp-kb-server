@@ -1619,7 +1619,7 @@ async function ensureServer({ memoryDb, kbDb, rootDir, port: preferredPort, host
           "SELECT project_id, COUNT(*) as mem_count FROM memory GROUP BY project_id"
         ).all();
         const kbRows = kbDb.prepare(
-          "SELECT project_id, COUNT(*) as kb_count FROM kb_meta WHERE project_id IS NOT NULL GROUP BY project_id"
+          "SELECT m.project_id, COUNT(*) as kb_count FROM kb_meta m JOIN kb_fts f ON f.rowid = m.rowid WHERE m.project_id IS NOT NULL AND f.source IS NOT '_index' GROUP BY m.project_id"
         ).all();
         const srcRows = kbDb.prepare(
           "SELECT project_id, COUNT(*) as src_count FROM sources WHERE project_id IS NOT NULL GROUP BY project_id"
@@ -1662,28 +1662,28 @@ async function ensureServer({ memoryDb, kbDb, rootDir, port: preferredPort, host
         if (q.trim()) {
           if (projectId) {
             rows = kbDb.prepare(
-              "SELECT f.rowid as id, f.title, f.source FROM kb_fts f JOIN kb_meta m ON m.rowid=f.rowid WHERE kb_fts MATCH ? AND m.project_id=? ORDER BY rank LIMIT ? OFFSET ?"
+              "SELECT f.rowid as id, f.title, f.source FROM kb_fts f JOIN kb_meta m ON m.rowid=f.rowid WHERE kb_fts MATCH ? AND m.project_id=? AND f.source IS NOT '_index' ORDER BY rank LIMIT ? OFFSET ?"
             ).all(q.trim() + "*", projectId, limit, offset);
             total = kbDb.prepare(
-              "SELECT COUNT(*) as n FROM kb_fts f JOIN kb_meta m ON m.rowid=f.rowid WHERE kb_fts MATCH ? AND m.project_id=?"
+              "SELECT COUNT(*) as n FROM kb_fts f JOIN kb_meta m ON m.rowid=f.rowid WHERE kb_fts MATCH ? AND m.project_id=? AND f.source IS NOT '_index'"
             ).get(q.trim() + "*", projectId)?.n ?? 0;
           } else {
             rows = kbDb.prepare(
-              "SELECT rowid as id, title, source FROM kb_fts WHERE kb_fts MATCH ? ORDER BY rank LIMIT ? OFFSET ?"
+              "SELECT rowid as id, title, source FROM kb_fts WHERE kb_fts MATCH ? AND source IS NOT '_index' ORDER BY rank LIMIT ? OFFSET ?"
             ).all(q.trim() + "*", limit, offset);
-            total = kbDb.prepare("SELECT COUNT(*) as n FROM kb_fts WHERE kb_fts MATCH ?").get(q.trim() + "*")?.n ?? 0;
+            total = kbDb.prepare("SELECT COUNT(*) as n FROM kb_fts WHERE kb_fts MATCH ? AND source IS NOT '_index'").get(q.trim() + "*")?.n ?? 0;
           }
         } else {
           if (projectId) {
             rows = kbDb.prepare(
-              "SELECT f.rowid as id, f.title, f.source FROM kb_fts f JOIN kb_meta m ON m.rowid=f.rowid WHERE m.project_id=? LIMIT ? OFFSET ?"
+              "SELECT f.rowid as id, f.title, f.source FROM kb_fts f JOIN kb_meta m ON m.rowid=f.rowid WHERE m.project_id=? AND f.source IS NOT '_index' LIMIT ? OFFSET ?"
             ).all(projectId, limit, offset);
             total = kbDb.prepare(
-              "SELECT COUNT(*) as n FROM kb_fts f JOIN kb_meta m ON m.rowid=f.rowid WHERE m.project_id=?"
+              "SELECT COUNT(*) as n FROM kb_fts f JOIN kb_meta m ON m.rowid=f.rowid WHERE m.project_id=? AND f.source IS NOT '_index'"
             ).get(projectId)?.n ?? 0;
           } else {
-            rows = kbDb.prepare("SELECT rowid as id, title, source FROM kb_fts LIMIT ? OFFSET ?").all(limit, offset);
-            total = kbDb.prepare("SELECT COUNT(*) as n FROM kb_fts").get()?.n ?? 0;
+            rows = kbDb.prepare("SELECT rowid as id, title, source FROM kb_fts WHERE source IS NOT '_index' LIMIT ? OFFSET ?").all(limit, offset);
+            total = kbDb.prepare("SELECT COUNT(*) as n FROM kb_fts WHERE source IS NOT '_index'").get()?.n ?? 0;
           }
         }
         return json(res, 200, { items: rows, total });
@@ -1897,7 +1897,7 @@ async function ensureServer({ memoryDb, kbDb, rootDir, port: preferredPort, host
         const projectId = u.searchParams.get("project_id");
         if (!projectId) return badRequest(res, "project_id required");
         const rows = kbDb.prepare(
-          "SELECT f.rowid as id, f.title, f.content, f.source FROM kb_fts f JOIN kb_meta m ON m.rowid=f.rowid WHERE m.project_id=? ORDER BY f.rowid ASC"
+          "SELECT f.rowid as id, f.title, f.content, f.source FROM kb_fts f JOIN kb_meta m ON m.rowid=f.rowid WHERE m.project_id=? AND f.source IS NOT '_index' ORDER BY f.rowid ASC"
         ).all(projectId);
         const lines = [`# Knowledge Base — ${projectId}`, ``, `> Exported ${new Date().toISOString()} · ${rows.length} document${rows.length !== 1 ? 's' : ''}`, ``];
         for (const doc of rows) {

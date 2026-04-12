@@ -144,6 +144,21 @@ export function createKbTools({ kbDb }) {
   const insertMetaStmt = kbDb.prepare("INSERT OR REPLACE INTO kb_meta (rowid, project_id) VALUES (?, ?)");
   const deleteStmt = kbDb.prepare("DELETE FROM kb_fts WHERE rowid = ?");
   const deleteMetaStmt = kbDb.prepare("DELETE FROM kb_meta WHERE rowid = ?");
+  const getByIdStmt = kbDb.prepare(
+    "SELECT f.rowid AS id, f.title, f.content, f.source FROM kb_fts f WHERE f.rowid = ?"
+  );
+  const getByIdScopedStmt = kbDb.prepare(
+    "SELECT f.rowid AS id, f.title, f.content, f.source FROM kb_fts f JOIN kb_meta m ON m.rowid = f.rowid WHERE f.rowid = ? AND m.project_id = ?"
+  );
+  const updateStmt = kbDb.prepare(
+    "UPDATE kb_fts SET title = ?, content = ?, source = ? WHERE rowid = ?"
+  );
+  const getIndexStmt = kbDb.prepare(
+    `SELECT f.rowid AS id, f.title, f.content, f.source
+     FROM kb_fts f JOIN kb_meta m ON m.rowid = f.rowid
+     WHERE f.source = '_index' AND m.project_id = ?
+     LIMIT 1`
+  );
 
   // Atomic insert with optional project scoping
   const insertTx = kbDb.transaction((title, content, source, project_id) => {
@@ -160,7 +175,7 @@ export function createKbTools({ kbDb }) {
     `
       SELECT rowid AS id, title, content, source
       FROM kb_fts
-      WHERE kb_fts MATCH ?
+      WHERE kb_fts MATCH ? AND source IS NOT '_index'
       ORDER BY bm25(kb_fts)
       LIMIT ?
     `
@@ -172,16 +187,17 @@ export function createKbTools({ kbDb }) {
       SELECT f.rowid AS id, f.title, f.content, f.source
       FROM kb_fts f
       JOIN kb_meta m ON m.rowid = f.rowid
-      WHERE kb_fts MATCH ? AND m.project_id = ?
+      WHERE kb_fts MATCH ? AND m.project_id = ? AND f.source IS NOT '_index'
       ORDER BY bm25(kb_fts)
       LIMIT ?
     `
   );
-  
+
   const allStmt = kbDb.prepare(
     `
       SELECT rowid AS id, title, content, source
       FROM kb_fts
+      WHERE source IS NOT '_index'
       ORDER BY rowid DESC
       LIMIT ?
     `
@@ -192,7 +208,7 @@ export function createKbTools({ kbDb }) {
       SELECT f.rowid AS id, f.title, f.content, f.source
       FROM kb_fts f
       JOIN kb_meta m ON m.rowid = f.rowid
-      WHERE m.project_id = ?
+      WHERE m.project_id = ? AND f.source IS NOT '_index'
       ORDER BY f.rowid DESC
       LIMIT ?
     `
@@ -202,6 +218,7 @@ export function createKbTools({ kbDb }) {
     `
       SELECT rowid AS id, title, content, source
       FROM kb_fts
+      WHERE source IS NOT '_index'
       ORDER BY rowid DESC
       LIMIT ?
     `
@@ -219,7 +236,7 @@ export function createKbTools({ kbDb }) {
   return [
     {
       name: "kb.add",
-      description: "Add a document to the knowledge base.",
+      description: "Add a document to the knowledge base. After adding, regenerate the index page with kb.index.",
       inputSchema: {
         type: "object",
         additionalProperties: false,
@@ -304,7 +321,7 @@ export function createKbTools({ kbDb }) {
     {
       name: "kb.search",
       description:
-        "Search the knowledge base using SQLite FTS5 by default; optionally uses Qdrant vector similarity when a vector is provided.",
+        "Search the knowledge base using SQLite FTS5 by default; optionally uses Qdrant vector similarity when a vector is provided. Tip: call kb.index first to read the table of contents before searching blind.",
       inputSchema: {
         type: "object",
         additionalProperties: false,
@@ -314,7 +331,8 @@ export function createKbTools({ kbDb }) {
           project_id: { type: "string", description: "Optional project ID to search only project-scoped documents" },
           vector: { type: "array", items: { type: "number" } },
           qdrantUrl: { type: "string" },
-          qdrantCollection: { type: "string" }
+          qdrantCollection: { type: "string" },
+          max_content_length: { type: "number", description: "Truncate content to this many characters. Truncated results include truncated:true. Omit to return full content." }
         },
         required: ["query"]
       },
@@ -325,11 +343,21 @@ export function createKbTools({ kbDb }) {
         const project_id = args?.project_id ?? null;
         const qdrantUrlArg = args?.qdrantUrl;
         const qdrantCollectionArg = args?.qdrantCollection;
+        const maxContentLength = (typeof args?.max_content_length === "number" && args.max_content_length > 0)
+          ? Math.trunc(args.max_content_length)
+          : null;
         expectString(query, "query");
         expectOptionalVector(vector, "vector");
         if (project_id !== null) expectString(project_id, "project_id");
         expectOptionalUrl(qdrantUrlArg, "qdrantUrl");
         expectOptionalString(qdrantCollectionArg, "qdrantCollection");
+
+        function applyContentLimit(item) {
+          if (maxContentLength === null || typeof item.content !== "string" || item.content.length <= maxContentLength) {
+            return item;
+          }
+          return { ...item, content: item.content.slice(0, maxContentLength), truncated: true };
+        }
 
         if (vector !== undefined) {
           const { qdrantUrl, qdrantCollection, qdrantApiKey } = getQdrantConfig({
@@ -370,13 +398,13 @@ export function createKbTools({ kbDb }) {
             if (typeof id !== "number" && typeof id !== "string") continue;
             const key = String(id);
             const payload = item?.payload;
-            out.push({
+            out.push(applyContentLimit({
               id,
               title: payload?.title ?? byId.get(key)?.title,
               content: payload?.content ?? byId.get(key)?.content,
               source: (payload?.source ?? byId.get(key)?.source) ?? undefined,
               score: scores.get(key)
-            });
+            }));
           }
           return out;
         }
@@ -387,7 +415,7 @@ export function createKbTools({ kbDb }) {
             ? (project_id ? allScopedStmt.all(project_id, limit) : allStmt.all(limit))
             : (project_id ? searchScopedStmt.all(toFtsPhrase(trimmed), project_id, limit) : searchStmt.all(toFtsPhrase(trimmed), limit));
 
-        return rows.map((r) => ({
+        return rows.map((r) => applyContentLimit({
           id: r.id,
           title: r.title,
           content: r.content,
@@ -397,7 +425,7 @@ export function createKbTools({ kbDb }) {
     },
     {
       name: "kb.init",
-      description: "Scan a project directory for markdown and text files and bulk-import them into the knowledge base. Skips files already present (matched by source path). Returns a summary of what was added and skipped.",
+      description: "Scan a project directory for markdown and text files and bulk-import them into the knowledge base. Skips files already present (matched by source path). Returns a summary of what was added and skipped. After running, follow the workflow in .kiro/steering/kb-ingest.md for each added file to extract entities, create cross-references, and update the index and changelog.",
       inputSchema: {
         type: "object",
         additionalProperties: false,
@@ -489,6 +517,164 @@ export function createKbTools({ kbDb }) {
           added_titles: added.map(d => d.title),
           skipped_paths: skipped
         };
+      }
+    },
+    {
+      name: "kb.get",
+      description: "Fetch a single KB document by ID. Use after kb.search with max_content_length to retrieve the full content of a specific document.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          id: { type: "number", description: "KB document ID" },
+          project_id: { type: "string", description: "Optional project ID to scope the lookup" }
+        },
+        required: ["id"]
+      },
+      handler: (args) => {
+        const id = args?.id;
+        if (typeof id !== "number" || !Number.isFinite(id)) {
+          const error = new Error("id must be a number");
+          error.code = -32602;
+          throw error;
+        }
+        const project_id = args?.project_id ?? null;
+        if (project_id !== null) expectString(project_id, "project_id");
+
+        const row = project_id
+          ? getByIdScopedStmt.get(id, project_id)
+          : getByIdStmt.get(id);
+
+        if (!row) {
+          const error = new Error(`KB document not found: ${id}`);
+          error.code = -32602;
+          throw error;
+        }
+
+        return { id: row.id, title: row.title, content: row.content, source: row.source ?? undefined };
+      }
+    },
+    {
+      name: "kb.index",
+      description: "Read or replace the wiki index page (source='_index'). Call with no content to fetch the current index. Call with content to atomically replace it. The index is the LLM's navigation entry point — read it before searching, regenerate it after any kb.add/update/delete.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          project_id: { type: "string", description: "Project ID to scope the index" },
+          content: { type: "string", description: "New index content. Omit to fetch the current index without modifying it." }
+        },
+        required: ["project_id"]
+      },
+      handler: (args) => {
+        const project_id = args?.project_id;
+        const content = args?.content;
+        expectString(project_id, "project_id");
+        if (content !== undefined) expectString(content, "content");
+
+        const existing = getIndexStmt.get(project_id);
+
+        // Fetch-only when no content provided
+        if (content === undefined) {
+          if (!existing) return { exists: false, content: null };
+          return { exists: true, id: existing.id, content: existing.content };
+        }
+
+        // Upsert
+        if (existing) {
+          updateStmt.run("Index", content, "_index", existing.id);
+          return { id: existing.id, updated: true };
+        } else {
+          const id = insertTx("Index", content, "_index", project_id);
+          return { id, updated: false };
+        }
+      }
+    },
+    {
+      name: "kb.update",
+      description: "Update an existing KB document by ID. Replaces title, content, and/or source. After updating, regenerate the index page with kb.index.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          id: { type: "number", description: "KB document ID to update" },
+          project_id: { type: "string", description: "Optional project ID to scope the lookup" },
+          title: { type: "string", description: "New title (replaces existing)" },
+          content: { type: "string", description: "New content (replaces existing)" },
+          source: { type: "string", description: "New source URL or path (replaces existing)" }
+        },
+        required: ["id"]
+      },
+      handler: (args) => {
+        const id = args?.id;
+        if (typeof id !== "number" || !Number.isFinite(id)) {
+          const error = new Error("id must be a number");
+          error.code = -32602;
+          throw error;
+        }
+        const project_id = args?.project_id ?? null;
+        if (project_id !== null) expectString(project_id, "project_id");
+
+        const existing = project_id
+          ? getByIdScopedStmt.get(id, project_id)
+          : getByIdStmt.get(id);
+
+        if (!existing) {
+          const error = new Error(`KB document not found: ${id}`);
+          error.code = -32602;
+          throw error;
+        }
+
+        const newTitle = args?.title !== undefined ? args.title : existing.title;
+        const newContent = args?.content !== undefined ? args.content : existing.content;
+        const newSource = args?.source !== undefined ? args.source : existing.source;
+
+        expectString(newTitle, "title");
+        expectString(newContent, "content");
+        if (newSource !== null) expectOptionalString(newSource, "source");
+
+        updateStmt.run(newTitle, newContent, newSource ?? null, id);
+
+        return { id, title: newTitle, content: newContent, source: newSource ?? undefined };
+      }
+    },
+    {
+      name: "kb.delete",
+      description: "Delete a KB document by ID. After deleting, regenerate the index page with kb.index.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          id: { type: "number", description: "KB document ID to delete" },
+          project_id: { type: "string", description: "Optional project ID to scope the lookup" }
+        },
+        required: ["id"]
+      },
+      handler: (args) => {
+        const id = args?.id;
+        if (typeof id !== "number" || !Number.isFinite(id)) {
+          const error = new Error("id must be a number");
+          error.code = -32602;
+          throw error;
+        }
+        const project_id = args?.project_id ?? null;
+        if (project_id !== null) expectString(project_id, "project_id");
+
+        const existing = project_id
+          ? getByIdScopedStmt.get(id, project_id)
+          : getByIdStmt.get(id);
+
+        if (!existing) {
+          return { deleted: false, message: `KB document not found: ${id}` };
+        }
+
+        const deleteTx = kbDb.transaction(() => {
+          deleteMetaStmt.run(id);
+          deleteStmt.run(id);
+        });
+        deleteTx();
+
+        return { deleted: true, id };
       }
     }
   ];
