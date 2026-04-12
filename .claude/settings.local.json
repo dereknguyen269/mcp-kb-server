@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:gist.github.com)",
+      "Read(//Users/quan/.claude/plugins/cache/ui-ux-pro-max-skill/ui-ux-pro-max/2.5.0/.claude/skills/ui-ux-pro-max/**)",
+      "Bash(python3 scripts/search.py \"developer tool knowledge base dashboard data management\" --design-system -p \"MCP KB Dashboard\" -f markdown)",
+      "Bash(python3 scripts/search.py \"developer tool admin panel sidebar navigation\" --domain style -n 3)",
+      "Bash(npm test:*)",
+      "Bash(NODE_ENV=test node:*)",
+      "Bash(node:*)"
+    ]
+  }
+}

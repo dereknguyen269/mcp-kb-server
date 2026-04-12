@@ -29,7 +29,7 @@ test("dashboard.projects writes HTML to ./temp and returns a local URL", async (
     assert.ok(fs.existsSync(result.dashboard_file));
 
     const html = fs.readFileSync(result.dashboard_file, "utf8");
-    assert.ok(html.includes("Knowledge Base Dashboard"));
+    assert.ok(html.includes("KB Dashboard"));
 
     assert.ok(typeof result.dashboard_url === "string");
     assert.ok(result.dashboard_url.includes("127.0.0.1"));

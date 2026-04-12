@@ -1,4 +1,9 @@
 
+import fs from "node:fs";
+import path from "node:path";
+import { detectProjectId, validateProjectRoot } from "../utils/projectId.js";
+import { expandGlob, readTextFileSafe, SKIP_DIR_NAMES } from "../utils/fileDiscovery.js";
+
 function asLimit(value, defaultValue) {
   if (value === undefined || value === null) return defaultValue;
   if (!Number.isFinite(value)) return defaultValue;
@@ -388,6 +393,102 @@ export function createKbTools({ kbDb }) {
           content: r.content,
           source: r.source ?? undefined
         }));
+      }
+    },
+    {
+      name: "kb.init",
+      description: "Scan a project directory for markdown and text files and bulk-import them into the knowledge base. Skips files already present (matched by source path). Returns a summary of what was added and skipped.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          project_root: { type: "string", description: "Absolute path to the project root to scan" },
+          project_id: { type: "string", description: "Project identifier (auto-detected from project_root if omitted)" },
+          patterns: {
+            type: "array",
+            items: { type: "string" },
+            description: "Glob patterns relative to project_root to include (default: [\"**/*.md\", \"**/*.txt\"])"
+          },
+          skip_patterns: {
+            type: "array",
+            items: { type: "string" },
+            description: "Glob patterns to exclude (default: node_modules, .git, dist, build)"
+          },
+          overwrite: { type: "boolean", description: "Re-import files that already exist in the KB (default: false)" }
+        },
+        required: ["project_root"]
+      },
+      async handler(args) {
+        const projectRoot = validateProjectRoot(args.project_root);
+        const detection = detectProjectId(projectRoot, { explicitProjectId: args.project_id });
+        const projectId = detection.project_id;
+        const patterns = Array.isArray(args.patterns) && args.patterns.length
+          ? args.patterns
+          : ["**/*.md", "**/*.txt"];
+        const overwrite = args.overwrite === true;
+
+        // Collect all matching files
+        const seen = new Set();
+        const candidates = [];
+        for (const pattern of patterns) {
+          const matches = expandGlob(projectRoot, pattern);
+          for (const m of matches) {
+            if (seen.has(m.abs)) continue;
+            seen.add(m.abs);
+            // Skip common noise dirs even if glob matched
+            const parts = m.rel.split("/");
+            if (parts.some(p => SKIP_DIR_NAMES.has(p))) continue;
+            candidates.push(m);
+          }
+        }
+
+        // Build set of already-imported source paths for this project
+        const existingSources = new Set(
+          kbDb.prepare(
+            "SELECT f.source FROM kb_fts f JOIN kb_meta m ON m.rowid=f.rowid WHERE m.project_id=? AND f.source IS NOT NULL AND f.source != ''"
+          ).all(projectId).map(r => r.source)
+        );
+
+        const bulkInsert = kbDb.transaction((docs) => {
+          for (const { title, content, source } of docs) {
+            const info = insertStmt.run(title, content, source);
+            insertMetaStmt.run(info.lastInsertRowid, projectId);
+          }
+        });
+
+        const added = [];
+        const skipped = [];
+
+        for (const m of candidates) {
+          const sourceKey = m.rel;
+          if (!overwrite && existingSources.has(sourceKey)) {
+            skipped.push(sourceKey);
+            continue;
+          }
+          const content = readTextFileSafe(m.abs);
+          if (content === null || content.trim().length === 0) {
+            skipped.push(sourceKey + " (empty or binary)");
+            continue;
+          }
+          // Use first heading or filename as title
+          const headingMatch = content.match(/^#\s+(.+)/m);
+          const title = headingMatch
+            ? headingMatch[1].trim().slice(0, 200)
+            : path.basename(m.abs, path.extname(m.abs));
+          added.push({ title, content, source: sourceKey });
+        }
+
+        if (added.length > 0) bulkInsert(added);
+
+        return {
+          project_id: projectId,
+          project_root: projectRoot,
+          scanned: candidates.length,
+          added: added.length,
+          skipped: skipped.length,
+          added_titles: added.map(d => d.title),
+          skipped_paths: skipped
+        };
       }
     }
   ];

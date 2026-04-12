@@ -15,7 +15,11 @@ import { createMemoryTools } from "./tools/memory.js";
 import { createKbTools } from "./tools/kb.js";
 import { createSummaryTools } from "./tools/summary.js";
 import { createSummaryDeltaTool } from "./tools/summaryDelta.js";
-import { createDashboardTools } from "./tools/dashboard.js";
+import { createDashboardTools, startDashboardServer } from "./tools/dashboard.js";
+import { createSourceTools } from "./tools/sources.js";
+import { createWikiLinkTools } from "./tools/wikiLinks.js";
+import { createWikiLintTool } from "./tools/wikiLint.js";
+import { createWikiExportTool } from "./tools/wikiExport.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -143,6 +147,13 @@ process.on("SIGINT", () => {
 });
 
 logger.info("MCP Knowledge Base Server starting", { dataDir });
+
+// Auto-start dashboard server if DASHBOARD_PORT is configured
+if (config.dashboardPort) {
+  startDashboardServer({ memoryDb, kbDb, rootDir, port: config.dashboardPort, host: config.dashboardHost })
+    .then(({ port, host }) => logger.info(`Dashboard available at http://${host}:${port}`))
+    .catch(err => logger.warn("Dashboard auto-start failed", { err: err.message }));
+}
 process.on("SIGTERM", () => {
   logger.info("Received SIGTERM, shutting down gracefully");
   stopVacuum();
@@ -157,13 +168,21 @@ const kbSearchTool = kbTools.find((t) => t.name === "kb.search");
 const summaryTools = createSummaryTools({ memorySearchTool, kbSearchTool });
 const summaryDeltaTool = createSummaryDeltaTool({ memorySearchTool, kbSearchTool });
 const dashboardTools = createDashboardTools({ memoryDb, kbDb, rootDir });
+const sourceTools = createSourceTools({ kbDb });
+const wikiLinkTools = createWikiLinkTools({ memoryDb });
+const wikiLintTool = createWikiLintTool({ memoryDb, kbDb });
+const wikiExportTool = createWikiExportTool({ memoryDb, kbDb });
 
 const tools = [
-  ...memoryTools, 
-  ...kbTools, 
-  ...summaryTools, 
-  summaryDeltaTool, 
+  ...memoryTools,
+  ...kbTools,
+  ...summaryTools,
+  summaryDeltaTool,
   ...dashboardTools,
+  ...sourceTools,
+  ...wikiLinkTools,
+  wikiLintTool,
+  wikiExportTool,
   // Health and metrics endpoint
   {
     name: "health.check",

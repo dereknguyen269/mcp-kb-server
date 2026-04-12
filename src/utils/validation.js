@@ -88,6 +88,61 @@ const dashboardSchema = Joi.object({
   project_root: Joi.string().optional()
 });
 
+const sourceIngestSchema = Joi.object({
+  files: Joi.array().items(Joi.object({
+    filename: Joi.string().required().max(500),
+    content: Joi.string().max(10 * 1024 * 1024).optional(),
+    file_path: Joi.string().max(1000).optional()
+  })).min(1).required(),
+  project_id: Joi.string().optional(),
+  project_root: Joi.string().optional()
+});
+
+const sourceListSchema = Joi.object({
+  project_id: Joi.string().optional(),
+  project_root: Joi.string().optional(),
+  limit: Joi.number().integer().min(1).max(500).default(50),
+  offset: Joi.number().integer().min(0).default(0)
+});
+
+const sourceSearchSchema = Joi.object({
+  query: Joi.string().required().max(1000),
+  project_id: Joi.string().optional(),
+  project_root: Joi.string().optional(),
+  limit: Joi.number().integer().min(1).max(100).default(10)
+});
+
+const wikiLinkSchema = Joi.object({
+  source_id: Joi.string().required(),
+  target_id: Joi.string().required(),
+  source_type: Joi.string().valid('memory', 'source', 'kb').required(),
+  target_type: Joi.string().valid('memory', 'source', 'kb').required(),
+  relation: Joi.string().max(100).optional(),
+  project_id: Joi.string().optional(),
+  project_root: Joi.string().optional()
+});
+
+const wikiLinksSchema = Joi.object({
+  entry_id: Joi.string().required(),
+  project_id: Joi.string().optional(),
+  project_root: Joi.string().optional(),
+  direction: Joi.string().valid('in', 'out', 'both').default('both')
+});
+
+const wikiLintSchema = Joi.object({
+  project_id: Joi.string().optional(),
+  project_root: Joi.string().optional()
+});
+
+const wikiExportSchema = Joi.object({
+  output_dir: Joi.string().required().max(1000),
+  project_id: Joi.string().optional(),
+  project_root: Joi.string().optional(),
+  include_sources: Joi.boolean().default(true),
+  include_memory: Joi.boolean().default(true),
+  include_kb: Joi.boolean().default(true)
+});
+
 export const schemas = {
   'memory.store': memoryStoreSchema,
   'memory.search': memorySearchSchema,
@@ -98,7 +153,14 @@ export const schemas = {
   'kb.search': kbSearchSchema,
   'summary.project': summaryProjectSchema,
   'summary.delta': summaryDeltaSchema,
-  'dashboard.projects': dashboardSchema
+  'dashboard.projects': dashboardSchema,
+  'source.ingest': sourceIngestSchema,
+  'source.list': sourceListSchema,
+  'source.search': sourceSearchSchema,
+  'wiki.link': wikiLinkSchema,
+  'wiki.links': wikiLinksSchema,
+  'wiki.lint': wikiLintSchema,
+  'wiki.export': wikiExportSchema
 };
 
 export function validateInput(toolName, params) {

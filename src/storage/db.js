@@ -47,6 +47,23 @@ function initMemoryDb(db) {
     db.exec("CREATE INDEX IF NOT EXISTS idx_memory_project_id_created_at ON memory(project_id, created_at)");
     db.exec("CREATE INDEX IF NOT EXISTS idx_memory_expires_at ON memory(expires_at)");
 
+    // Wiki links table for cross-reference tracking
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS wiki_links (
+        id TEXT PRIMARY KEY,
+        source_id TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        source_type TEXT NOT NULL,
+        target_type TEXT NOT NULL,
+        relation TEXT,
+        project_id TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+    `);
+    db.exec("CREATE INDEX IF NOT EXISTS idx_wiki_links_source ON wiki_links(source_id)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_wiki_links_target ON wiki_links(target_id)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_wiki_links_project ON wiki_links(project_id)");
+
     // FTS5 virtual table for memory full-text search (P4)
     db.exec(`
       CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
@@ -88,6 +105,29 @@ function initKbDb(db) {
       );
     `);
     db.exec("CREATE INDEX IF NOT EXISTS idx_kb_meta_project_id ON kb_meta(project_id)");
+
+    // Raw sources layer
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS sources (
+        id TEXT PRIMARY KEY,
+        slug TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        file_type TEXT NOT NULL,
+        content TEXT NOT NULL,
+        file_path TEXT,
+        project_id TEXT NOT NULL,
+        ingested_at TEXT NOT NULL,
+        size_bytes INTEGER
+      );
+    `);
+    db.exec("CREATE INDEX IF NOT EXISTS idx_sources_project ON sources(project_id)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_sources_slug ON sources(slug, project_id)");
+    db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS sources_fts USING fts5(
+        slug,
+        content
+      );
+    `);
   } catch (error) {
     throw new DatabaseError("Failed to initialize KB database", error);
   }

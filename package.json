@@ -42,8 +42,10 @@
   },
   "dependencies": {
     "better-sqlite3": "^12.6.2",
+    "csv-parse": "^5.6.0",
     "dotenv": "^16.6.1",
     "joi": "^17.13.3",
+    "pdf-parse": "^1.1.1",
     "winston": "^3.19.0"
   }
 }

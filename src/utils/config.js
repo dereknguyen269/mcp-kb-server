@@ -44,6 +44,7 @@ const config = {
 
   // Dashboard
   dashboardPort: parseIntEnv('DASHBOARD_PORT', null, { min: 1024, max: 65535 }),
+  dashboardHost: process.env.DASHBOARD_HOST || '127.0.0.1',
 
   // Performance
   dbTimeout:      parseIntEnv('DB_TIMEOUT',      5000,      { min: 100 }),
